@@ -6,7 +6,7 @@
 /*   By: yeham <yeham@student.42.fr>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2022/11/23 12:04:17 by yeham             #+#    #+#             */
-/*   Updated: 2022/12/23 15:37:58 by yeham            ###   ########.fr       */
+/*   Updated: 2023/04/02 21:42:12 by yeham            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -45,37 +45,41 @@ char	*check_order(char **path, char *cmd)
 	return (0);
 }
 
-void	insert_pipe(int flag, t_data *all, char *envp[], int fd[])
+void	first_child(t_data *all, int *fd, char *argv[], char *envp[])
 {
-	if (flag == 1)
-	{
-		all->order1 = check_order(all->path, all->cmd1[0]);
-		close(fd[0]);
-		if (dup2(all->infile, 0) == -1)
-			just_error("dup error");
-		if (dup2(fd[1], 1) == -1)
-			just_error("dup error");
-		close(fd[1]);
-		close(all->infile);
-		if (execve(all->order1, all->cmd1, envp) == -1)
-			just_error("exec error");
-	}
-	else
-	{
-		all->order2 = check_order(all->path, all->cmd2[0]);
-		close(fd[1]);
-		if (dup2(all->outfile, 1) == -1)
-			just_error("dup error");
-		if (dup2(fd[0], 0) == -1)
-			just_error("dup error");
-		close(fd[0]);
-		close(all->outfile);
-		if (execve(all->order2, all->cmd2, envp) == -1)
-			just_error("exec error");
-	}
+	all->infile = open(argv[1], O_RDONLY, 0644);
+	if (all->infile == -1)
+		perror("file open error");
+	all->order1 = check_order(all->path, all->cmd1[0]);
+	close(fd[0]);
+	if (dup2(all->infile, 0) == -1)
+		just_error("dup error");
+	if (dup2(fd[1], 1) == -1)
+		just_error("dup error");
+	close(fd[1]);
+	close(all->infile);
+	if (execve(all->order1, all->cmd1, envp) == -1)
+		just_error("exec error");
 }
 
-void	pipe_maker(t_data *all, char *envp[])
+void	last_child(t_data *all, int *fd, char *argv[], char *envp[])
+{
+	all->outfile = open(argv[4], O_RDWR | O_CREAT | O_TRUNC, 0644);
+	if (all->outfile == -1)
+		just_error("file open error");
+	all->order2 = check_order(all->path, all->cmd2[0]);
+	close(fd[1]);
+	if (dup2(all->outfile, 1) == -1)
+		just_error("dup error");
+	if (dup2(fd[0], 0) == -1)
+		just_error("dup error");
+	close(fd[0]);
+	close(all->outfile);
+	if (execve(all->order2, all->cmd2, envp) == -1)
+		just_error("exec error");
+}
+
+void	pipe_maker(t_data *all, char *argv[], char *envp[])
 {
 	pid_t	pid1;
 	pid_t	pid2;
@@ -86,14 +90,14 @@ void	pipe_maker(t_data *all, char *envp[])
 	if (pid1 == -1)
 		just_error("pid error");
 	else if (pid1 == 0)
-		insert_pipe(1, all, envp, fd);
+		first_child(all, fd, argv, envp);
 	else
 	{
-		pid2 = fork();
-		if (pid2 == -1)
+		pid1 = fork();
+		if (pid1 == -1)
 			just_error("pid error");
-		else if (pid2 == 0)
-			insert_pipe(0, all, envp, fd);
+		else if (pid1 == 0)
+			last_child(all, fd, argv, envp);
 		else
 		{
 			close(fd[0]);
@@ -123,16 +127,10 @@ int	main(int argc, char *argv[], char *envp[])
 
 	if (argc != 5)
 		just_error("input count");
-	all.infile = open(argv[1], O_RDONLY, 0644);
-	if (all.infile == -1)
-		perror("file open error");
-	all.outfile = open(argv[4], O_RDWR | O_CREAT | O_TRUNC, 0644);
-	if (all.outfile == -1)
-		just_error("file open error");
 	all.cmd1 = ft_split(argv[2], ' ');
 	all.cmd2 = ft_split(argv[3], ' ');
 	all.path = path_maker(envp);
-	pipe_maker(&all, envp);
+	pipe_maker(&all, argv, envp);
 	allfree(all.path);
 	allfree(all.cmd1);
 	allfree(all.cmd2);
